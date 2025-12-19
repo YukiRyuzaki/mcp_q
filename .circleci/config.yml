@@ -1,14 +1,131 @@
 version: 2.1
 
-jobs:
-  hello-job:
+# Define reusable executors
+executors:
+  node-executor:
     docker:
-      - image: cimg/node:17.2.0 # the primary container, where your job's commands are run
+      - image: cimg/node:18.20
+    working_directory: ~/project
+
+# Define reusable commands
+commands:
+  install-dependencies:
+    description: "Install npm dependencies with caching"
     steps:
-      - checkout # check out the code in the project directory
-      - run: echo "hello world" # run the `echo` command
+      - restore_cache:
+          keys:
+            - v1-dependencies-{{ checksum "package-lock.json" }}
+            - v1-dependencies-
+      - run:
+          name: Install dependencies
+          command: npm ci
+      - save_cache:
+          paths:
+            - node_modules
+          key: v1-dependencies-{{ checksum "package-lock.json" }}
+
+jobs:
+  # Install dependencies and run linting
+  lint:
+    executor: node-executor
+    steps:
+      - checkout
+      - install-dependencies
+      - run:
+          name: Run ESLint
+          command: npm run lint
+
+  # Run unit tests with coverage
+  test:
+    executor: node-executor
+    steps:
+      - checkout
+      - install-dependencies
+      - run:
+          name: Run tests
+          command: npm test
+      - run:
+          name: Generate test results
+          command: |
+            mkdir -p ~/test-results/jest
+            npm test -- --outputFile=~/test-results/jest/results.xml --testResultsProcessor=jest-junit
+          when: always
+      - store_test_results:
+          path: ~/test-results
+      - store_artifacts:
+          path: ~/test-results
+
+  # Build and validate the application
+  build:
+    executor: node-executor
+    steps:
+      - checkout
+      - install-dependencies
+      - run:
+          name: Build application
+          command: |
+            echo "Building application..."
+            # Add any build steps here if needed
+            npm list --depth=0
+      - run:
+          name: Validate application startup
+          command: |
+            timeout 10s npm start &
+            sleep 5
+            curl -f http://localhost:3000/api/health || exit 1
+          background: false
+
+  # Security audit
+  security-audit:
+    executor: node-executor
+    steps:
+      - checkout
+      - install-dependencies
+      - run:
+          name: Run security audit
+          command: npm audit --audit-level=moderate
+
+  # Deploy job (placeholder for actual deployment)
+  deploy:
+    executor: node-executor
+    steps:
+      - checkout
+      - install-dependencies
+      - run:
+          name: Deploy application
+          command: |
+            echo "Deploying to production..."
+            # Add actual deployment commands here
+            echo "Deployment completed successfully"
 
 workflows:
-  my-workflow:
+  version: 2
+  
+  # Main workflow for all branches
+  build-test-deploy:
     jobs:
-      - hello-job
+      - lint
+      - test
+      - security-audit
+      - build:
+          requires:
+            - lint
+            - test
+      - deploy:
+          requires:
+            - build
+            - security-audit
+          filters:
+            branches:
+              only: main
+  
+  # Nightly security check
+  nightly-security:
+    triggers:
+      - schedule:
+          cron: "0 2 * * *"
+          filters:
+            branches:
+              only: main
+    jobs:
+      - security-audit
