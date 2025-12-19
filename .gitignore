@@ -5,3 +5,4 @@ API/
 
 # Amazon Q MCP configuration (contains sensitive tokens)
 .amazonq/mcp.json
+.amazonq/agents/
