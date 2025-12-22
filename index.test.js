@@ -22,7 +22,7 @@ describe('greet function', () => {
   });
 
   test('should handle undefined input', () => {
-    expect(greet(undefined)).toBe('Hello, undefined!');
+    expect(greet(undefined)).toBe('Hello, World!');
   });
 
   test('should handle numeric input', () => {
